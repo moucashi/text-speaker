@@ -30,6 +30,7 @@ HISTORY_FILE = HISTORY_DIR / "history.json"
 _genie: ModuleType | None = None
 _genie_lock = threading.RLock()
 _loaded_characters: set[str] = set()
+StatusCallback = Callable[[str], None]
 
 
 class SpeechGenerationCancelled(RuntimeError):
@@ -64,48 +65,84 @@ def validate_character(character: str) -> str:
     return normalized_character
 
 
-def ensure_genie_data_exists() -> None:
+def _emit_status(status_callback: StatusCallback | None, message: str) -> None:
+    if status_callback is not None:
+        status_callback(message)
+
+
+def _raise_stage_error(
+    status_callback: StatusCallback | None,
+    stage: str,
+    exc: Exception,
+) -> None:
+    message = f"{stage}失败：{exc}"
+    _emit_status(status_callback, message)
+    raise RuntimeError(message) from exc
+
+
+def ensure_genie_data_exists(status_callback: StatusCallback | None = None) -> None:
     """在导入 genie_tts 前准备 GenieData，避免触发交互式下载确认。"""
     genie_data_dir = Path(os.getenv("GENIE_DATA_DIR", "./GenieData"))
     if genie_data_dir.exists():
         return
 
     if genie_data_dir.name != "GenieData":
-        raise FileNotFoundError(
-            f"GENIE_DATA_DIR 指向的目录不存在：{genie_data_dir}。"
+        message = (
+            f"Genie-TTS 基础资源目录不存在：{genie_data_dir}。"
             "自动下载仅支持默认 GenieData 目录，或 basename 为 GenieData 的目录。"
         )
+        _emit_status(status_callback, message)
+        raise FileNotFoundError(message)
 
     from huggingface_hub import snapshot_download
 
     genie_data_dir.parent.mkdir(parents=True, exist_ok=True)
+    _emit_status(status_callback, "正在下载 Genie-TTS 基础资源...")
     print("GenieData 不存在，正在从 HuggingFace 自动下载 Genie-TTS 基础资源...")
-    snapshot_download(
-        repo_id="High-Logic/Genie",
-        repo_type="model",
-        allow_patterns="GenieData/*",
-        local_dir=str(genie_data_dir.parent),
-        local_dir_use_symlinks=True,
-    )
+    try:
+        snapshot_download(
+            repo_id="High-Logic/Genie",
+            repo_type="model",
+            allow_patterns="GenieData/*",
+            local_dir=str(genie_data_dir.parent),
+            local_dir_use_symlinks=True,
+        )
+    except Exception as exc:
+        _raise_stage_error(status_callback, "下载 Genie-TTS 基础资源", exc)
 
 
-def _get_genie() -> ModuleType:
+def _get_genie(status_callback: StatusCallback | None = None) -> ModuleType:
     global _genie
     if _genie is None:
-        ensure_genie_data_exists()
-        import genie_tts as genie
+        ensure_genie_data_exists(status_callback)
+        _emit_status(status_callback, "正在初始化 Genie-TTS...")
+        try:
+            import genie_tts as genie
+        except Exception as exc:
+            _raise_stage_error(status_callback, "初始化 Genie-TTS", exc)
 
         _genie = genie
     return _genie
 
 
-def ensure_character_loaded(character: str) -> ModuleType:
+def ensure_character_loaded(
+    character: str,
+    status_callback: StatusCallback | None = None,
+) -> ModuleType:
     """加载指定语音包；同一进程内同一语音包只加载一次。"""
     normalized_character = validate_character(character)
     with _genie_lock:
-        genie = _get_genie()
+        genie = _get_genie(status_callback)
         if normalized_character not in _loaded_characters:
-            genie.load_predefined_character(normalized_character)
+            character_dir = Path("CharacterModels") / "v2ProPlus" / normalized_character
+            if character_dir.exists():
+                _emit_status(status_callback, f"正在加载 {normalized_character} 语音包...")
+            else:
+                _emit_status(status_callback, f"正在下载并加载 {normalized_character} 语音包...")
+            try:
+                genie.load_predefined_character(normalized_character)
+            except Exception as exc:
+                _raise_stage_error(status_callback, f"加载 {normalized_character} 语音包", exc)
             _loaded_characters.add(normalized_character)
         return genie
 
@@ -175,6 +212,7 @@ def generate_speech(
     download_roberta: bool = False,
     play: bool = False,
     should_cancel: Callable[[], bool] | None = None,
+    status_callback: StatusCallback | None = None,
 ) -> None:
     character = validate_character(character)
 
@@ -182,33 +220,48 @@ def generate_speech(
         os.environ["GENIE_DATA_DIR"] = str(genie_data_dir.expanduser().resolve())
 
     _raise_if_cancelled(should_cancel)
-    genie = _get_genie()
+    genie = _get_genie(status_callback)
 
     if download_roberta:
+        _emit_status(status_callback, "正在下载 RoBERTa 文本特征资源...")
         download_roberta_data = getattr(genie, "download_roberta_data", None)
         if download_roberta_data is None:
-            raise RuntimeError("当前安装的 genie-tts 版本未提供 download_roberta_data()。")
-        download_roberta_data()
+            message = "下载 RoBERTa 文本特征资源失败：当前安装的 genie-tts 版本未提供 download_roberta_data()。"
+            _emit_status(status_callback, message)
+            raise RuntimeError(message)
+        try:
+            download_roberta_data()
+        except Exception as exc:
+            _raise_stage_error(status_callback, "下载 RoBERTa 文本特征资源", exc)
 
     output.parent.mkdir(parents=True, exist_ok=True)
 
     _raise_if_cancelled(should_cancel)
-    genie = ensure_character_loaded(character)
+    genie = ensure_character_loaded(character, status_callback)
     _raise_if_cancelled(should_cancel)
 
-    genie.tts(
-        character_name=character,
-        text=text,
-        play=play,
-        save_path=str(output),
-    )
+    _emit_status(status_callback, "正在生成语音...")
+    try:
+        genie.tts(
+            character_name=character,
+            text=text,
+            play=play,
+            save_path=str(output),
+        )
+    except Exception as exc:
+        _raise_stage_error(status_callback, "生成语音", exc)
 
     if play:
-        genie.wait_for_playback_done()
+        try:
+            genie.wait_for_playback_done()
+        except Exception as exc:
+            _raise_stage_error(status_callback, "等待语音播放完成", exc)
 
     _raise_if_cancelled(should_cancel)
     if not output.exists() or output.stat().st_size == 0:
-        raise RuntimeError(f"语音生成失败，未写入有效音频文件：{output}")
+        message = f"生成语音失败：未写入有效音频文件：{output}"
+        _emit_status(status_callback, message)
+        raise RuntimeError(message)
 
 
 def run_cli(args: argparse.Namespace) -> None:
