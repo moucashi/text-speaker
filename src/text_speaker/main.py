@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
 import threading
@@ -12,7 +13,16 @@ from typing import Callable, Sequence
 DEFAULT_CHARACTER = "feibi"
 DEFAULT_TEXT = "你好，我是菲比。今天我们来测试 Genie 中文语音生成。"
 DEFAULT_OUTPUT = Path("outputs/feibi_zh.wav")
+MODELS_DIR = Path("models")
+DEFAULT_GENIE_DATA_DIR = MODELS_DIR / "GenieData"
+CHARACTER_MODELS_DIR = MODELS_DIR / "CharacterModels"
+CHARACTER_MODEL_VERSION = "v2ProPlus"
 PREDEFINED_CHARACTERS = ("feibi", "mika", "thirtyseven")
+CHARACTER_LANGUAGES = {
+    "feibi": "Chinese",
+    "mika": "Japanese",
+    "thirtyseven": "English",
+}
 CHARACTER_DISPLAY_NAMES = {
     "feibi": "[中文] 菲比 (feibi)",
     "mika": "[日语] 圣园未花 / Misono Mika (mika)",
@@ -45,7 +55,7 @@ class SpeechGenerationCancelled(RuntimeError):
 def available_characters() -> list[str]:
     """返回 Genie-TTS 当前示例支持选择的预置语音包。"""
     characters = set(PREDEFINED_CHARACTERS)
-    model_root = Path("CharacterModels") / "v2ProPlus"
+    model_root = CHARACTER_MODELS_DIR / CHARACTER_MODEL_VERSION
     if model_root.exists():
         characters.update(path.name for path in model_root.iterdir() if path.is_dir())
 
@@ -106,7 +116,8 @@ def _raise_stage_error(
 
 def ensure_genie_data_exists(status_callback: StatusCallback | None = None) -> None:
     """在导入 genie_tts 前准备 GenieData，避免触发交互式下载确认。"""
-    genie_data_dir = Path(os.getenv("GENIE_DATA_DIR", "./GenieData"))
+    genie_data_dir = Path(os.getenv("GENIE_DATA_DIR", str(DEFAULT_GENIE_DATA_DIR)))
+    os.environ["GENIE_DATA_DIR"] = str(genie_data_dir)
     if genie_data_dir.exists():
         return
 
@@ -149,6 +160,60 @@ def _get_genie(status_callback: StatusCallback | None = None) -> ModuleType:
     return _genie
 
 
+def _download_predefined_character(
+    character: str,
+    status_callback: StatusCallback | None = None,
+) -> Path:
+    character_dir = CHARACTER_MODELS_DIR / CHARACTER_MODEL_VERSION / character
+    if character_dir.exists():
+        return character_dir
+
+    from huggingface_hub import snapshot_download
+
+    CHARACTER_MODELS_DIR.mkdir(parents=True, exist_ok=True)
+    display_name = character_display_name(character)
+    _emit_status(status_callback, f"正在下载 {display_name} 语音包...")
+    try:
+        snapshot_download(
+            repo_id="High-Logic/Genie",
+            repo_type="model",
+            allow_patterns=f"CharacterModels/{CHARACTER_MODEL_VERSION}/{character}/*",
+            local_dir=str(MODELS_DIR),
+            local_dir_use_symlinks=True,
+        )
+    except Exception as exc:
+        _raise_stage_error(status_callback, f"下载 {display_name} 语音包", exc)
+
+    if not character_dir.exists():
+        message = f"下载 {display_name} 语音包失败：未找到模型目录：{character_dir}"
+        _emit_status(status_callback, message)
+        raise RuntimeError(message)
+    return character_dir
+
+
+def _load_predefined_character_from_dir(
+    genie: ModuleType,
+    character: str,
+    character_dir: Path,
+) -> None:
+    prompt_config_path = character_dir / "prompt_wav.json"
+    with prompt_config_path.open("r", encoding="utf-8") as file:
+        prompt_wav_dict = json.load(file)
+
+    prompt_config = prompt_wav_dict["Normal"]
+    genie.load_character(
+        character_name=character,
+        onnx_model_dir=character_dir / "tts_models",
+        language=CHARACTER_LANGUAGES[character],
+    )
+    genie.set_reference_audio(
+        character_name=character,
+        audio_path=character_dir / "prompt_wav" / prompt_config["wav"],
+        audio_text=prompt_config["text"],
+        language=CHARACTER_LANGUAGES[character],
+    )
+
+
 def ensure_character_loaded(
     character: str,
     status_callback: StatusCallback | None = None,
@@ -159,13 +224,24 @@ def ensure_character_loaded(
         genie = _get_genie(status_callback)
         if normalized_character not in _loaded_characters:
             display_name = character_display_name(normalized_character)
-            character_dir = Path("CharacterModels") / "v2ProPlus" / normalized_character
+            character_dir = (
+                CHARACTER_MODELS_DIR / CHARACTER_MODEL_VERSION / normalized_character
+            )
             if character_dir.exists():
                 _emit_status(status_callback, f"正在加载 {display_name} 语音包...")
             else:
                 _emit_status(status_callback, f"正在下载并加载 {display_name} 语音包...")
+            character_dir = _download_predefined_character(
+                normalized_character,
+                status_callback,
+            )
+            _emit_status(status_callback, f"正在加载 {display_name} 语音包...")
             try:
-                genie.load_predefined_character(normalized_character)
+                _load_predefined_character_from_dir(
+                    genie,
+                    normalized_character,
+                    character_dir,
+                )
             except Exception as exc:
                 _raise_stage_error(status_callback, f"加载 {display_name} 语音包", exc)
             _loaded_characters.add(normalized_character)
