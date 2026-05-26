@@ -48,6 +48,25 @@ _loaded_characters: set[str] = set()
 StatusCallback = Callable[[str], None]
 
 
+def _ensure_standard_streams() -> None:
+    """为无控制台的 Windows EXE 提供静默标准流，避免第三方库写日志时报错。"""
+    missing_stream = False
+    if sys.stdin is None:
+        sys.stdin = sys.__stdin__ = open(os.devnull, "r", encoding="utf-8")
+        missing_stream = True
+    if sys.stdout is None:
+        sys.stdout = sys.__stdout__ = open(os.devnull, "w", encoding="utf-8")
+        missing_stream = True
+    if sys.stderr is None:
+        sys.stderr = sys.__stderr__ = open(os.devnull, "w", encoding="utf-8")
+        missing_stream = True
+    if missing_stream:
+        os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
+
+
+_ensure_standard_streams()
+
+
 class SpeechGenerationCancelled(RuntimeError):
     """语音生成任务已被用户取消。"""
 

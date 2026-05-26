@@ -65,6 +65,36 @@ uv run python -m text_speaker.main --play
 uv run python -m text_speaker.main --download-roberta
 ```
 
+## 打包为 EXE
+
+项目使用 PyInstaller 打包 Windows 可执行文件，命令行模式和 GUI 模式使用同一个入口文件 `src/text_speaker/main.py`。
+
+安装打包依赖：
+
+```bash
+uv sync --group build
+```
+
+执行打包：
+
+```bash
+uv run build
+```
+
+打包完成后会生成两个目录：
+
+- `dist/text-speaker/text-speaker.exe`：无控制台窗口，适合直接运行 GUI。
+- `dist/text-speaker-console/text-speaker-console.exe`：带控制台窗口，适合命令行使用。
+
+两个 EXE 都保持当前启动逻辑：无参数启动 GUI；传入任意命令行参数时进入 CLI 模式。例如：
+
+```powershell
+dist\text-speaker-console\text-speaker-console.exe --cli
+dist\text-speaker-console\text-speaker-console.exe --text "你好，我是菲比。" --output outputs\demo.wav
+```
+
+发布时请分发整个 `dist/text-speaker/` 或 `dist/text-speaker-console/` 文件夹，而不是只复制单个 EXE。`models/`、`outputs/` 和历史音频不会被打包进 EXE；首次运行仍会按现有逻辑下载 Genie-TTS 基础资源和语音包模型。
+
 ## 参考
 
 - Genie-TTS 支持 GPT-SoVITS V2 和 V2ProPlus，支持日语、英语、中文、韩语，Python 版本要求为 3.9 及以上。

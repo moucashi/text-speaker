@@ -8,8 +8,14 @@ dependencies = [
     "genie-tts>=2.0.2",
 ]
 
+[dependency-groups]
+build = [
+    "pyinstaller>=6.14.0",
+]
+
 [project.scripts]
 dev = "text_speaker.main:main"
+build = "text_speaker.build:main"
 
 [build-system]
 requires = ["hatchling"]
