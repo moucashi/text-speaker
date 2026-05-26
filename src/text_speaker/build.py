@@ -11,6 +11,12 @@ ENTRYPOINT = ROOT_DIR / "src" / "text_speaker" / "main.py"
 SRC_DIR = ROOT_DIR / "src"
 DIST_DIR = ROOT_DIR / "dist"
 BUILD_DIR = ROOT_DIR / "build" / "pyinstaller"
+GENIE_RUNTIME_DATA_PACKAGES = (
+    "g2pM",
+    "jieba_fast",
+    "pypinyin",
+    "pyopenjtalk",
+)
 
 
 def run_pyinstaller(*, name: str, windowed: bool) -> None:
@@ -42,9 +48,10 @@ def run_pyinstaller(*, name: str, windowed: bool) -> None:
         str(SRC_DIR),
         "--collect-all",
         "genie_tts",
-        "--collect-data",
-        "jieba_fast",
     ]
+    for package in GENIE_RUNTIME_DATA_PACKAGES:
+        command.extend(["--collect-data", package])
+
     if windowed:
         command.append("--windowed")
     command.append(str(ENTRYPOINT))
