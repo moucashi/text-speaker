@@ -13,6 +13,12 @@ SRC_DIR = ROOT_DIR / "src"
 DIST_DIR = ROOT_DIR / "dist"
 BUILD_DIR = ROOT_DIR / "build" / "pyinstaller"
 PYINSTALLER_GENIE_DATA_DIR = BUILD_DIR / "analysis" / "GenieData"
+GENIE_RUNTIME_DATA_PACKAGES = (
+    "g2pM",
+    "jieba_fast",
+    "pypinyin",
+    "pyopenjtalk",
+)
 
 
 def prepare_pyinstaller_genie_data_dir() -> None:
@@ -52,6 +58,9 @@ def run_pyinstaller(*, name: str, windowed: bool) -> None:
         "--collect-all",
         "genie_tts",
     ]
+    for package in GENIE_RUNTIME_DATA_PACKAGES:
+        command.extend(["--collect-data", package])
+
     if windowed:
         command.append("--windowed")
     command.append(str(ENTRYPOINT))
