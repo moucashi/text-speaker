@@ -586,7 +586,7 @@ class GenieTtsApp:
         preview = item.text.replace("\n", " ")
         if len(preview) > 160:
             preview = f"{preview[:157]}..."
-        return f"[{character_display_name(item.character)}] {preview}"
+        return f"{character_display_name(item.character)} {preview}"
 
     def _format_error_status(self, message: str) -> str:
         one_line_message = " ".join(message.split())
