@@ -5,7 +5,7 @@ import subprocess
 import sys
 import threading
 import tkinter as tk
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import datetime
 from pathlib import Path
 from tkinter import messagebox, ttk
@@ -29,6 +29,7 @@ class HistoryItem:
     character: str
     audio_path: str
     created_at: str
+    deleted_at: str | None = None
 
 
 class GenieTtsApp:
@@ -42,7 +43,7 @@ class GenieTtsApp:
         self.current_task_id = 0
         self.cancelled_task_ids: set[int] = set()
         self.worker: threading.Thread | None = None
-        self.last_generated: HistoryItem | None = self.history[0] if self.history else None
+        self.last_generated: HistoryItem | None = self._latest_active_history_item()
 
         self.character_var = tk.StringVar(value=DEFAULT_CHARACTER)
         self.status_var = tk.StringVar(value="就绪")
@@ -126,7 +127,18 @@ class GenieTtsApp:
         history_section.columnconfigure(0, weight=1)
         history_section.rowconfigure(1, weight=1)
 
-        ttk.Label(history_section, text="历史记录").grid(row=0, column=0, sticky="w")
+        history_header = ttk.Frame(history_section)
+        history_header.grid(row=0, column=0, columnspan=2, sticky="ew")
+        history_header.columnconfigure(0, weight=1)
+
+        ttk.Label(history_header, text="历史记录").grid(row=0, column=0, sticky="w")
+
+        self.clear_history_button = ttk.Button(
+            history_header,
+            text="清理",
+            command=self._clear_visible_history,
+        )
+        self.clear_history_button.grid(row=0, column=1, sticky="e")
 
         self.history_canvas = tk.Canvas(
             history_section,
@@ -346,7 +358,10 @@ class GenieTtsApp:
         for child in self.history_frame.winfo_children():
             child.destroy()
 
-        if not self.history:
+        visible_history = self._active_history_items()
+        self.clear_history_button.state(["!disabled"] if visible_history else ["disabled"])
+
+        if not visible_history:
             ttk.Label(
                 self.history_frame,
                 text="暂无历史记录",
@@ -355,7 +370,7 @@ class GenieTtsApp:
             return
 
         self.history_frame.columnconfigure(0, weight=1)
-        for row, item in enumerate(self.history):
+        for row, item in enumerate(visible_history):
             row_frame = ttk.Frame(self.history_frame, style="History.TFrame")
             row_frame.grid(row=row, column=0, sticky="ew", pady=(0, 8))
             row_frame.columnconfigure(0, weight=1)
@@ -374,6 +389,61 @@ class GenieTtsApp:
                 command=lambda path=item.audio_path: self._play_audio(Path(path)),
             )
             play_button.grid(row=0, column=1, sticky="e", padx=(12, 0))
+
+            delete_button = ttk.Button(
+                row_frame,
+                text="删除",
+                command=lambda history_item=item: self._mark_history_item_deleted(history_item),
+            )
+            delete_button.grid(row=0, column=2, sticky="e", padx=(8, 0))
+
+    def _active_history_items(self) -> list[HistoryItem]:
+        return [item for item in self.history if item.deleted_at is None]
+
+    def _latest_active_history_item(self) -> HistoryItem | None:
+        for item in self.history:
+            if item.deleted_at is None:
+                return item
+        return None
+
+    def _mark_history_item_deleted(self, item: HistoryItem) -> None:
+        deleted_at = datetime.now().isoformat(timespec="seconds")
+        updated_history: list[HistoryItem] = []
+        for current_item in self.history:
+            if current_item is item:
+                updated_history.append(replace(current_item, deleted_at=deleted_at))
+            else:
+                updated_history.append(current_item)
+
+        self.history = updated_history
+        self._refresh_last_generated_after_history_change()
+        self._save_history()
+        self._render_history()
+        self.status_var.set("已从历史记录中删除")
+
+    def _clear_visible_history(self) -> None:
+        deleted_at = datetime.now().isoformat(timespec="seconds")
+        self.history = [
+            replace(item, deleted_at=deleted_at) if item.deleted_at is None else item
+            for item in self.history
+        ]
+        self._refresh_last_generated_after_history_change()
+        self._save_history()
+        self._render_history()
+        self.status_var.set("已清理历史记录")
+
+    def _refresh_last_generated_after_history_change(self) -> None:
+        if self.last_generated is not None and self.last_generated.deleted_at is None:
+            for item in self._active_history_items():
+                if (
+                    item.audio_path == self.last_generated.audio_path
+                    and item.created_at == self.last_generated.created_at
+                ):
+                    self.last_generated = item
+                    self._refresh_primary_button()
+                    return
+        self.last_generated = self._latest_active_history_item()
+        self._refresh_primary_button()
 
     def _format_history_text(self, item: HistoryItem) -> str:
         preview = item.text.replace("\n", " ")
@@ -404,6 +474,11 @@ class GenieTtsApp:
                     character=normalize_character(str(raw_item["character"])),
                     audio_path=str(raw_item["audio_path"]),
                     created_at=str(raw_item["created_at"]),
+                    deleted_at=(
+                        str(raw_item["deleted_at"])
+                        if raw_item.get("deleted_at") is not None
+                        else None
+                    ),
                 )
             except KeyError:
                 continue
