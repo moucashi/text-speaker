@@ -13,6 +13,7 @@ from typing import Callable, Sequence
 
 
 DEFAULT_CHARACTER = "feibi"
+APP_NAME = "键盘说话器"
 DEFAULT_TEXT = "你好，我是菲比。今天我们来测试 Genie 中文语音生成。"
 DEFAULT_OUTPUT = Path("outputs/feibi_zh.wav")
 MODELS_DIR = Path("models")
@@ -423,7 +424,7 @@ def _raise_if_cancelled(should_cancel: Callable[[], bool] | None) -> None:
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="使用 Genie-TTS 的菲比预置语音包生成中文语音。"
+        description=f"{APP_NAME}：使用 Genie-TTS 的菲比预置语音包生成中文语音。"
     )
     parser.add_argument(
         "--cli",

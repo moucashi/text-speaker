@@ -13,6 +13,7 @@ from tkinter import messagebox, ttk
 from typing import Callable
 
 from .main import (
+    APP_NAME,
     DEFAULT_CHARACTER,
     DEFAULT_TEXT,
     HISTORY_DIR,
@@ -39,7 +40,7 @@ class HistoryItem:
 class GenieTtsApp:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
-        self.root.title("Genie 中文语音生成")
+        self.root.title(APP_NAME)
         self.root.minsize(720, 560)
 
         self.history: list[HistoryItem] = self._load_history()

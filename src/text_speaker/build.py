@@ -6,8 +6,11 @@ import subprocess
 import sys
 from pathlib import Path
 
+from .main import APP_NAME
+
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
+CONSOLE_APP_NAME = f"{APP_NAME}-console"
 ENTRYPOINT = ROOT_DIR / "src" / "text_speaker" / "main.py"
 SRC_DIR = ROOT_DIR / "src"
 DIST_DIR = ROOT_DIR / "dist"
@@ -77,9 +80,9 @@ def main() -> None:
 
     shutil.rmtree(BUILD_DIR, ignore_errors=True)
     prepare_pyinstaller_genie_data_dir()
-    run_pyinstaller(name="text-speaker", windowed=True)
-    run_pyinstaller(name="text-speaker-console", windowed=False)
+    run_pyinstaller(name=APP_NAME, windowed=True)
+    run_pyinstaller(name=CONSOLE_APP_NAME, windowed=False)
 
     print("EXE 打包完成：")
-    print(f"- {DIST_DIR / 'text-speaker' / 'text-speaker.exe'}")
-    print(f"- {DIST_DIR / 'text-speaker-console' / 'text-speaker-console.exe'}")
+    print(f"- {DIST_DIR / APP_NAME / f'{APP_NAME}.exe'}")
+    print(f"- {DIST_DIR / CONSOLE_APP_NAME / f'{CONSOLE_APP_NAME}.exe'}")

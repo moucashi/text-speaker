@@ -1,2 +1,2 @@
-"""Genie-TTS example package."""
+"""键盘说话器。"""
 
