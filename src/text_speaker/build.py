@@ -42,6 +42,8 @@ def run_pyinstaller(*, name: str, windowed: bool) -> None:
         str(SRC_DIR),
         "--collect-all",
         "genie_tts",
+        "--collect-data",
+        "jieba_fast",
     ]
     if windowed:
         command.append("--windowed")
