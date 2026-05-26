@@ -14,6 +14,15 @@ BUILD_DIR = ROOT_DIR / "build" / "pyinstaller"
 
 
 def run_pyinstaller(*, name: str, windowed: bool) -> None:
+    release_dir = DIST_DIR / name
+    try:
+        if release_dir.exists():
+            shutil.rmtree(release_dir)
+    except PermissionError as exc:
+        raise RuntimeError(
+            f"无法清理 {release_dir}，请先关闭正在运行的 {name}.exe 后重试。"
+        ) from exc
+
     command = [
         sys.executable,
         "-m",

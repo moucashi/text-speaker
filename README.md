@@ -78,7 +78,7 @@ uv sync --group build
 执行打包：
 
 ```bash
-uv run text-speaker-build
+uv run build
 ```
 
 打包完成后会生成两个目录：

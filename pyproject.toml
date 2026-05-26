@@ -15,7 +15,7 @@ build = [
 
 [project.scripts]
 text-speaker = "text_speaker.main:main"
-text-speaker-build = "text_speaker.build:main"
+build = "text_speaker.build:main"
 
 [build-system]
 requires = ["hatchling"]
