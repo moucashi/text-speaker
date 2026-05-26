@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import threading
@@ -9,6 +10,7 @@ from dataclasses import asdict, dataclass, replace
 from datetime import datetime
 from pathlib import Path
 from tkinter import messagebox, ttk
+from typing import Callable
 
 from .main import (
     DEFAULT_CHARACTER,
@@ -44,6 +46,7 @@ class GenieTtsApp:
         self.current_task_id = 0
         self.cancelled_task_ids: set[int] = set()
         self.worker: threading.Thread | None = None
+        self.is_closing = False
         self.last_generated: HistoryItem | None = self._latest_active_history_item()
 
         self.character_var = tk.StringVar(value=character_display_name(DEFAULT_CHARACTER))
@@ -267,10 +270,10 @@ class GenieTtsApp:
                 status_callback=lambda message: self._update_generation_status(task_id, message),
             )
         except SpeechGenerationCancelled:
-            self.root.after(0, self._on_generation_cancelled, task_id)
+            self._call_on_ui_thread(self._on_generation_cancelled, task_id)
             return
         except Exception as exc:
-            self.root.after(0, self._on_generation_failed, task_id, str(exc))
+            self._call_on_ui_thread(self._on_generation_failed, task_id, str(exc))
             return
 
         item = HistoryItem(
@@ -279,10 +282,18 @@ class GenieTtsApp:
             audio_path=str(output_path),
             created_at=datetime.now().isoformat(timespec="seconds"),
         )
-        self.root.after(0, self._on_generation_succeeded, task_id, item)
+        self._call_on_ui_thread(self._on_generation_succeeded, task_id, item)
 
     def _update_generation_status(self, task_id: int, message: str) -> None:
-        self.root.after(0, self._set_generation_status, task_id, message)
+        self._call_on_ui_thread(self._set_generation_status, task_id, message)
+
+    def _call_on_ui_thread(self, callback: Callable[..., None], *args: object) -> None:
+        if self.is_closing:
+            return
+        try:
+            self.root.after(0, callback, *args)
+        except tk.TclError:
+            return
 
     def _set_generation_status(self, task_id: int, message: str) -> None:
         if self.is_generating and task_id == self.current_task_id:
@@ -301,7 +312,7 @@ class GenieTtsApp:
         try:
             stop_speech()
         finally:
-            self.root.after(0, self._on_generation_cancelled, task_id)
+            self._call_on_ui_thread(self._on_generation_cancelled, task_id)
 
     def _on_generation_succeeded(self, task_id: int, item: HistoryItem) -> None:
         if task_id in self.cancelled_task_ids:
@@ -367,6 +378,17 @@ class GenieTtsApp:
             return
 
         self.status_var.set(f"正在播放：{audio_path.name}")
+
+    def _stop_audio_playback(self) -> None:
+        if not sys.platform.startswith("win"):
+            return
+
+        try:
+            import winsound
+
+            winsound.PlaySound(None, 0)
+        except Exception:
+            return
 
     def _render_history(self) -> None:
         for child in self.history_frame.winfo_children():
@@ -557,9 +579,20 @@ class GenieTtsApp:
         self.history_canvas.itemconfigure(self.history_window, width=event.width)
 
     def _on_close(self) -> None:
+        if self.is_closing:
+            return
+        self.is_closing = True
         if self.is_generating:
+            self.cancelled_task_ids.add(self.current_task_id)
             stop_speech()
-        self.root.destroy()
+        self._stop_audio_playback()
+
+        try:
+            self.root.quit()
+            self.root.destroy()
+        finally:
+            if sys.platform.startswith("win") and getattr(sys, "frozen", False):
+                os._exit(0)
 
 
 def run_gui() -> None:
