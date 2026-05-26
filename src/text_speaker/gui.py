@@ -383,19 +383,19 @@ class GenieTtsApp:
             )
             text_label.grid(row=0, column=0, sticky="ew")
 
-            play_button = ttk.Button(
-                row_frame,
-                text="播放",
-                command=lambda path=item.audio_path: self._play_audio(Path(path)),
-            )
-            play_button.grid(row=0, column=1, sticky="e", padx=(12, 0))
-
             delete_button = ttk.Button(
                 row_frame,
                 text="删除",
                 command=lambda history_item=item: self._mark_history_item_deleted(history_item),
             )
-            delete_button.grid(row=0, column=2, sticky="e", padx=(8, 0))
+            delete_button.grid(row=0, column=1, sticky="e", padx=(12, 0))
+
+            play_button = ttk.Button(
+                row_frame,
+                text="播放",
+                command=lambda path=item.audio_path: self._play_audio(Path(path)),
+            )
+            play_button.grid(row=0, column=2, sticky="e", padx=(8, 0))
 
     def _active_history_items(self) -> list[HistoryItem]:
         return [item for item in self.history if item.deleted_at is None]
