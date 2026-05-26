@@ -23,6 +23,7 @@ from .main import (
     normalize_character,
     SpeechGenerationCancelled,
     stop_speech,
+    StatusUpdate,
 )
 
 
@@ -126,6 +127,12 @@ class GenieTtsApp:
             style="Muted.TLabel",
         )
         self.status_label.grid(row=2, column=0, columnspan=2, sticky="w", pady=(8, 0))
+
+        self.progress_bar = ttk.Progressbar(
+            input_section,
+            mode="determinate",
+            maximum=100,
+        )
 
         history_section = ttk.Frame(container, style="Section.TFrame")
         history_section.grid(row=1, column=0, sticky="nsew", pady=(18, 0))
@@ -267,7 +274,7 @@ class GenieTtsApp:
                 character=character,
                 play=False,
                 should_cancel=lambda: task_id in self.cancelled_task_ids,
-                status_callback=lambda message: self._update_generation_status(task_id, message),
+                status_callback=lambda status: self._update_generation_status(task_id, status),
             )
         except SpeechGenerationCancelled:
             self._call_on_ui_thread(self._on_generation_cancelled, task_id)
@@ -284,8 +291,8 @@ class GenieTtsApp:
         )
         self._call_on_ui_thread(self._on_generation_succeeded, task_id, item)
 
-    def _update_generation_status(self, task_id: int, message: str) -> None:
-        self._call_on_ui_thread(self._set_generation_status, task_id, message)
+    def _update_generation_status(self, task_id: int, status: str | StatusUpdate) -> None:
+        self._call_on_ui_thread(self._set_generation_status, task_id, status)
 
     def _call_on_ui_thread(self, callback: Callable[..., None], *args: object) -> None:
         if self.is_closing:
@@ -295,9 +302,17 @@ class GenieTtsApp:
         except tk.TclError:
             return
 
-    def _set_generation_status(self, task_id: int, message: str) -> None:
-        if self.is_generating and task_id == self.current_task_id:
-            self.status_var.set(message)
+    def _set_generation_status(self, task_id: int, status: str | StatusUpdate) -> None:
+        if not self.is_generating or task_id != self.current_task_id:
+            return
+
+        if isinstance(status, str):
+            self.status_var.set(status)
+            self._hide_progress()
+            return
+
+        self.status_var.set(status.message)
+        self._show_progress(status)
 
     def _cancel_generation(self) -> None:
         if not self.is_generating:
@@ -305,6 +320,7 @@ class GenieTtsApp:
         self.cancelled_task_ids.add(self.current_task_id)
         self.status_var.set("正在取消...")
         self.generate_button.state(["disabled"])
+        self._show_busy_progress()
         threading.Thread(target=self._stop_current_generation, daemon=True).start()
 
     def _stop_current_generation(self) -> None:
@@ -325,6 +341,7 @@ class GenieTtsApp:
         self._save_history()
         self._render_history()
         self.status_var.set(f"生成完成：{Path(item.audio_path).name}")
+        self._hide_progress()
         self._refresh_primary_button()
 
     def _on_generation_failed(self, task_id: int, message: str) -> None:
@@ -334,6 +351,7 @@ class GenieTtsApp:
             return
         self._set_generating(False)
         self.status_var.set(self._format_error_status(message))
+        self._hide_progress()
         messagebox.showerror("生成失败", message)
 
     def _on_generation_cancelled(self, task_id: int) -> None:
@@ -343,6 +361,7 @@ class GenieTtsApp:
             return
         self._set_generating(False)
         self.status_var.set("已取消生成")
+        self._hide_progress()
 
     def _set_generating(self, is_generating: bool) -> None:
         self.is_generating = is_generating
@@ -350,6 +369,34 @@ class GenieTtsApp:
         self.generate_button.state(["!disabled"])
         self.text_input.configure(state="disabled" if is_generating else "normal")
         self.character_select.configure(state="disabled" if is_generating else "readonly")
+        if not is_generating:
+            self._hide_progress()
+
+    def _show_progress(self, status: StatusUpdate) -> None:
+        self.progress_bar.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(8, 0))
+        if status.progress is not None:
+            if str(self.progress_bar.cget("mode")) != "determinate":
+                self.progress_bar.stop()
+                self.progress_bar.configure(mode="determinate")
+            self.progress_bar["value"] = max(0.0, min(100.0, status.progress))
+            return
+
+        if status.busy:
+            self._show_busy_progress()
+        else:
+            self._hide_progress()
+
+    def _show_busy_progress(self) -> None:
+        self.progress_bar.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(8, 0))
+        if str(self.progress_bar.cget("mode")) != "indeterminate":
+            self.progress_bar.configure(mode="indeterminate")
+        self.progress_bar.start(10)
+
+    def _hide_progress(self) -> None:
+        self.progress_bar.stop()
+        self.progress_bar.configure(mode="determinate")
+        self.progress_bar["value"] = 0
+        self.progress_bar.grid_remove()
 
     def _next_output_path(self, character: str) -> Path:
         HISTORY_DIR.mkdir(parents=True, exist_ok=True)

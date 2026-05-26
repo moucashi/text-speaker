@@ -6,6 +6,7 @@ import os
 import shutil
 import sys
 import threading
+from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
 from typing import Callable, Sequence
@@ -60,7 +61,17 @@ HISTORY_FILE = HISTORY_DIR / "history.json"
 _genie: ModuleType | None = None
 _genie_lock = threading.RLock()
 _loaded_characters: set[str] = set()
-StatusCallback = Callable[[str], None]
+
+
+@dataclass(frozen=True)
+class StatusUpdate:
+    message: str
+    progress: float | None = None
+    busy: bool = False
+
+
+StatusPayload = str | StatusUpdate
+StatusCallback = Callable[[StatusPayload], None]
 
 
 def _ensure_standard_streams() -> None:
@@ -133,9 +144,58 @@ def validate_character(character: str) -> str:
     return normalized_character
 
 
-def _emit_status(status_callback: StatusCallback | None, message: str) -> None:
+def _emit_status(
+    status_callback: StatusCallback | None,
+    message: str,
+    *,
+    progress: float | None = None,
+    busy: bool = False,
+) -> None:
     if status_callback is not None:
-        status_callback(message)
+        if progress is None and not busy:
+            status_callback(message)
+        else:
+            status_callback(StatusUpdate(message=message, progress=progress, busy=busy))
+
+
+def _download_tqdm_class(
+    status_callback: StatusCallback | None,
+    message_prefix: str,
+):
+    if status_callback is None:
+        return None
+
+    from tqdm.auto import tqdm
+
+    class GuiDownloadProgress(tqdm):
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            self._gui_last_percent = -1
+            super().__init__(*args, **kwargs)
+
+        def update(self, n: int = 1) -> bool | None:
+            result = super().update(n)
+            total = self.total
+            if total:
+                percent = min(100.0, max(0.0, self.n / total * 100))
+                whole_percent = int(percent)
+                if whole_percent != self._gui_last_percent:
+                    self._gui_last_percent = whole_percent
+                    _emit_status(
+                        status_callback,
+                        f"{message_prefix}：{whole_percent}%",
+                        progress=percent,
+                    )
+            else:
+                _emit_status(status_callback, message_prefix, busy=True)
+            return result
+
+        def close(self) -> None:
+            total = self.total
+            if total and self.n >= total:
+                _emit_status(status_callback, f"{message_prefix}：100%", progress=100.0)
+            super().close()
+
+    return GuiDownloadProgress
 
 
 def _raise_stage_error(
@@ -170,7 +230,7 @@ def _remove_incomplete_model_dir(directory: Path, status_callback: StatusCallbac
     if not _path_is_relative_to(directory, MODELS_DIR):
         raise RuntimeError(f"拒绝自动清理模型目录外的路径：{directory}")
 
-    _emit_status(status_callback, f"正在清理未完成的模型下载：{directory}")
+    _emit_status(status_callback, f"正在清理未完成的模型下载：{directory}", busy=True)
     shutil.rmtree(directory)
 
 
@@ -198,7 +258,7 @@ def ensure_genie_data_exists(status_callback: StatusCallback | None = None) -> N
             message = f"Genie-TTS 基础资源目录不完整，缺少：{formatted_paths}"
             _emit_status(status_callback, message)
             raise FileNotFoundError(message)
-        _emit_status(status_callback, "检测到未完成的 Genie-TTS 基础资源下载，正在重新下载...")
+        _emit_status(status_callback, "检测到未完成的 Genie-TTS 基础资源下载，正在重新下载...", busy=True)
         _remove_incomplete_model_dir(genie_data_dir, status_callback)
 
     if genie_data_dir.name != "GenieData":
@@ -212,7 +272,7 @@ def ensure_genie_data_exists(status_callback: StatusCallback | None = None) -> N
     from huggingface_hub import snapshot_download
 
     genie_data_dir.parent.mkdir(parents=True, exist_ok=True)
-    _emit_status(status_callback, "正在下载 Genie-TTS 基础资源...")
+    _emit_status(status_callback, "正在下载 Genie-TTS 基础资源...", progress=0.0)
     print("GenieData 不存在，正在从 HuggingFace 自动下载 Genie-TTS 基础资源...")
     try:
         snapshot_download(
@@ -221,6 +281,7 @@ def ensure_genie_data_exists(status_callback: StatusCallback | None = None) -> N
             allow_patterns="GenieData/*",
             local_dir=str(genie_data_dir.parent),
             local_dir_use_symlinks=True,
+            tqdm_class=_download_tqdm_class(status_callback, "正在下载 Genie-TTS 基础资源"),
         )
     except Exception as exc:
         _raise_stage_error(status_callback, "下载 Genie-TTS 基础资源", exc)
@@ -239,7 +300,7 @@ def _get_genie(status_callback: StatusCallback | None = None) -> ModuleType:
     with _genie_lock:
         if _genie is None:
             ensure_genie_data_exists(status_callback)
-            _emit_status(status_callback, "正在初始化 Genie-TTS...")
+            _emit_status(status_callback, "正在初始化 Genie-TTS...", busy=True)
             try:
                 import genie_tts as genie
             except Exception as exc:
@@ -259,14 +320,14 @@ def _download_predefined_character(
         if not missing_paths:
             return character_dir
         display_name = character_display_name(character)
-        _emit_status(status_callback, f"检测到未完成的 {display_name} 语音包下载，正在重新下载...")
+        _emit_status(status_callback, f"检测到未完成的 {display_name} 语音包下载，正在重新下载...", busy=True)
         _remove_incomplete_model_dir(character_dir, status_callback)
 
     from huggingface_hub import snapshot_download
 
     CHARACTER_MODELS_DIR.mkdir(parents=True, exist_ok=True)
     display_name = character_display_name(character)
-    _emit_status(status_callback, f"正在下载 {display_name} 语音包...")
+    _emit_status(status_callback, f"正在下载 {display_name} 语音包...", progress=0.0)
     try:
         snapshot_download(
             repo_id="High-Logic/Genie",
@@ -274,6 +335,7 @@ def _download_predefined_character(
             allow_patterns=f"CharacterModels/{CHARACTER_MODEL_VERSION}/{character}/*",
             local_dir=str(MODELS_DIR),
             local_dir_use_symlinks=True,
+            tqdm_class=_download_tqdm_class(status_callback, f"正在下载 {display_name} 语音包"),
         )
     except Exception as exc:
         _raise_stage_error(status_callback, f"下载 {display_name} 语音包", exc)
@@ -326,14 +388,14 @@ def ensure_character_loaded(
                 CHARACTER_MODELS_DIR / CHARACTER_MODEL_VERSION / normalized_character
             )
             if character_dir.exists():
-                _emit_status(status_callback, f"正在加载 {display_name} 语音包...")
+                _emit_status(status_callback, f"正在加载 {display_name} 语音包...", busy=True)
             else:
-                _emit_status(status_callback, f"正在下载并加载 {display_name} 语音包...")
+                _emit_status(status_callback, f"正在下载并加载 {display_name} 语音包...", busy=True)
             character_dir = _download_predefined_character(
                 normalized_character,
                 status_callback,
             )
-            _emit_status(status_callback, f"正在加载 {display_name} 语音包...")
+            _emit_status(status_callback, f"正在加载 {display_name} 语音包...", busy=True)
             try:
                 _load_predefined_character_from_dir(
                     genie,
@@ -422,7 +484,7 @@ def generate_speech(
     genie = _get_genie(status_callback)
 
     if download_roberta:
-        _emit_status(status_callback, "正在下载 RoBERTa 文本特征资源...")
+        _emit_status(status_callback, "正在下载 RoBERTa 文本特征资源...", busy=True)
         download_roberta_data = getattr(genie, "download_roberta_data", None)
         if download_roberta_data is None:
             message = "下载 RoBERTa 文本特征资源失败：当前安装的 genie-tts 版本未提供 download_roberta_data()。"
@@ -439,7 +501,7 @@ def generate_speech(
     genie = ensure_character_loaded(character, status_callback)
     _raise_if_cancelled(should_cancel)
 
-    _emit_status(status_callback, "正在生成语音...")
+    _emit_status(status_callback, "正在生成语音...", busy=True)
     try:
         genie.tts(
             character_name=character,
