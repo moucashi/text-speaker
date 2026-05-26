@@ -10,7 +10,7 @@ from datetime import datetime
 from pathlib import Path
 from tkinter import messagebox, ttk
 
-from .feibi_zh_tts import (
+from .main import (
     DEFAULT_CHARACTER,
     DEFAULT_TEXT,
     HISTORY_DIR,
