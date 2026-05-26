@@ -62,7 +62,7 @@ class GenieTtsApp:
         style = ttk.Style()
         style.configure("Section.TFrame", padding=16)
         style.configure("Muted.TLabel", foreground="#5f6368")
-        style.configure("Primary.TButton", padding=(16, 8))
+        style.configure("Primary.TButton", padding=(16, 0))
         style.configure("History.TFrame", padding=(12, 10))
 
     def _build_ui(self) -> None:
