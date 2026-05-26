@@ -139,7 +139,13 @@ class GenieTtsApp:
             text="清理",
             command=self._clear_visible_history,
         )
-        self.clear_history_button.grid(row=0, column=1, sticky="e")
+        self.open_history_folder_button = ttk.Button(
+            history_header,
+            text="打开文件夹",
+            command=self._open_history_folder,
+        )
+        self.open_history_folder_button.grid(row=0, column=1, sticky="e", padx=(0, 8))
+        self.clear_history_button.grid(row=0, column=2, sticky="e")
 
         self.history_canvas = tk.Canvas(
             history_section,
@@ -391,12 +397,55 @@ class GenieTtsApp:
             )
             delete_button.grid(row=0, column=1, sticky="e", padx=(12, 0))
 
+            open_button = ttk.Button(
+                row_frame,
+                text="打开",
+                command=lambda path=item.audio_path: self._open_audio_location(Path(path)),
+            )
+            open_button.grid(row=0, column=2, sticky="e", padx=(8, 0))
+
             play_button = ttk.Button(
                 row_frame,
                 text="播放",
                 command=lambda path=item.audio_path: self._play_audio(Path(path)),
             )
-            play_button.grid(row=0, column=2, sticky="e", padx=(8, 0))
+            play_button.grid(row=0, column=3, sticky="e", padx=(8, 0))
+
+    def _open_history_folder(self) -> None:
+        HISTORY_DIR.mkdir(parents=True, exist_ok=True)
+        self._open_folder(HISTORY_DIR)
+
+    def _open_audio_location(self, audio_path: Path) -> None:
+        if not audio_path.exists():
+            self.status_var.set("音频文件不存在，无法打开")
+            return
+
+        try:
+            if sys.platform.startswith("win"):
+                subprocess.Popen(["explorer", "/select,", str(audio_path)])
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", "-R", str(audio_path)])
+            else:
+                self._open_folder(audio_path.parent)
+        except Exception as exc:
+            messagebox.showerror("打开失败", str(exc))
+            return
+
+        self.status_var.set(f"已打开：{audio_path.name}")
+
+    def _open_folder(self, folder_path: Path) -> None:
+        try:
+            if sys.platform.startswith("win"):
+                subprocess.Popen(["explorer", str(folder_path)])
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", str(folder_path)])
+            else:
+                subprocess.Popen(["xdg-open", str(folder_path)])
+        except Exception as exc:
+            messagebox.showerror("打开失败", str(exc))
+            return
+
+        self.status_var.set(f"已打开文件夹：{folder_path}")
 
     def _active_history_items(self) -> list[HistoryItem]:
         return [item for item in self.history if item.deleted_at is None]
