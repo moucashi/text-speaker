@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import sys
@@ -11,6 +12,14 @@ ENTRYPOINT = ROOT_DIR / "src" / "text_speaker" / "main.py"
 SRC_DIR = ROOT_DIR / "src"
 DIST_DIR = ROOT_DIR / "dist"
 BUILD_DIR = ROOT_DIR / "build" / "pyinstaller"
+PYINSTALLER_GENIE_DATA_DIR = BUILD_DIR / "analysis" / "GenieData"
+
+
+def prepare_pyinstaller_genie_data_dir() -> None:
+    """提供 PyInstaller 分析阶段使用的最小 GenieData 目录，跳过第三方包交互确认。"""
+    PYINSTALLER_GENIE_DATA_DIR.mkdir(parents=True, exist_ok=True)
+    (PYINSTALLER_GENIE_DATA_DIR / "chinese-hubert-base").mkdir(exist_ok=True)
+    (PYINSTALLER_GENIE_DATA_DIR / "speaker_encoder.onnx").touch()
 
 
 def run_pyinstaller(*, name: str, windowed: bool) -> None:
@@ -47,7 +56,10 @@ def run_pyinstaller(*, name: str, windowed: bool) -> None:
         command.append("--windowed")
     command.append(str(ENTRYPOINT))
 
-    subprocess.run(command, cwd=ROOT_DIR, check=True)
+    env = os.environ.copy()
+    env["GENIE_DATA_DIR"] = str(PYINSTALLER_GENIE_DATA_DIR)
+
+    subprocess.run(command, cwd=ROOT_DIR, env=env, check=True)
 
 
 def main() -> None:
@@ -55,6 +67,7 @@ def main() -> None:
         raise FileNotFoundError(f"未找到入口文件：{ENTRYPOINT}")
 
     shutil.rmtree(BUILD_DIR, ignore_errors=True)
+    prepare_pyinstaller_genie_data_dir()
     run_pyinstaller(name="text-speaker", windowed=True)
     run_pyinstaller(name="text-speaker-console", windowed=False)
 
