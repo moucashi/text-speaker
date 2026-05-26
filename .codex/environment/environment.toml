@@ -1,0 +1,28 @@
+version = 1
+name = "text-speaker"
+
+[setup]
+script = """
+if (Test-Path .codex/setup.ps1) {
+    & ./.codex/setup.ps1
+} else {
+    uv sync --frozen
+    New-Item -ItemType Directory -Force -Path "outputs", "outputs/history" | Out-Null
+    uv run python -m py_compile src/text_speaker/main.py src/text_speaker/gui.py
+}
+"""
+
+[[actions]]
+name = "编译检查"
+icon = "run"
+command = "uv run python -m py_compile src/text_speaker/main.py src/text_speaker/gui.py"
+
+[[actions]]
+name = "查看帮助"
+icon = "run"
+command = "uv run python -m text_speaker.main --help"
+
+[[actions]]
+name = "CLI 烟测"
+icon = "run"
+command = "uv run python -m text_speaker.main --cli --output outputs/codex_smoke.wav"
