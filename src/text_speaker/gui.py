@@ -58,6 +58,7 @@ class GenieTtsApp:
         self._build_style()
         self._build_ui()
         self._render_history()
+        self._reset_progress()
         self._refresh_primary_button()
         self.root.bind("<Return>", self._handle_enter)
         self.root.bind("<Escape>", self._handle_escape)
@@ -309,7 +310,7 @@ class GenieTtsApp:
 
         if isinstance(status, str):
             self.status_var.set(status)
-            self._hide_progress()
+            self._reset_progress()
             return
 
         self.status_var.set(status.message)
@@ -342,7 +343,7 @@ class GenieTtsApp:
         self._save_history()
         self._render_history()
         self.status_var.set(f"生成完成：{Path(item.audio_path).name}")
-        self._hide_progress()
+        self._reset_progress()
         self._refresh_primary_button()
 
     def _on_generation_failed(self, task_id: int, message: str) -> None:
@@ -352,7 +353,7 @@ class GenieTtsApp:
             return
         self._set_generating(False)
         self.status_var.set(self._format_error_status(message))
-        self._hide_progress()
+        self._reset_progress()
         messagebox.showerror("生成失败", message)
 
     def _on_generation_cancelled(self, task_id: int) -> None:
@@ -362,7 +363,7 @@ class GenieTtsApp:
             return
         self._set_generating(False)
         self.status_var.set("已取消生成")
-        self._hide_progress()
+        self._reset_progress()
 
     def _set_generating(self, is_generating: bool) -> None:
         self.is_generating = is_generating
@@ -371,7 +372,7 @@ class GenieTtsApp:
         self.text_input.configure(state="disabled" if is_generating else "normal")
         self.character_select.configure(state="disabled" if is_generating else "readonly")
         if not is_generating:
-            self._hide_progress()
+            self._reset_progress()
 
     def _show_progress(self, status: StatusUpdate) -> None:
         self.progress_bar.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(8, 0))
@@ -385,7 +386,7 @@ class GenieTtsApp:
         if status.busy:
             self._show_busy_progress()
         else:
-            self._hide_progress()
+            self._reset_progress()
 
     def _show_busy_progress(self) -> None:
         self.progress_bar.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(8, 0))
@@ -393,11 +394,11 @@ class GenieTtsApp:
             self.progress_bar.configure(mode="indeterminate")
         self.progress_bar.start(10)
 
-    def _hide_progress(self) -> None:
+    def _reset_progress(self) -> None:
+        self.progress_bar.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(8, 0))
         self.progress_bar.stop()
         self.progress_bar.configure(mode="determinate")
         self.progress_bar["value"] = 0
-        self.progress_bar.grid_remove()
 
     def _next_output_path(self, character: str) -> Path:
         HISTORY_DIR.mkdir(parents=True, exist_ok=True)
