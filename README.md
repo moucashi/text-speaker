@@ -69,12 +69,6 @@ uv run python -m text_speaker.main --download-roberta
 
 项目使用 PyInstaller 打包 Windows 可执行文件，命令行模式和 GUI 模式使用同一个入口文件 `src/text_speaker/main.py`。
 
-安装打包依赖：
-
-```bash
-uv sync --group build
-```
-
 执行打包：
 
 ```bash
