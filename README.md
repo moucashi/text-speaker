@@ -77,17 +77,17 @@ uv run build
 
 打包完成后会生成两个目录：
 
-- `dist/键盘说话器/键盘说话器.exe`：无控制台窗口，适合直接运行 GUI。
-- `dist/键盘说话器-console/键盘说话器-console.exe`：带控制台窗口，适合命令行使用。
+- `dist/text-speaker/text-speaker.exe`：无控制台窗口，适合直接运行 GUI。
+- `dist/text-speaker-console/text-speaker-console.exe`：带控制台窗口，适合命令行使用。
 
 两个 EXE 都保持当前启动逻辑：无参数启动 GUI；传入任意命令行参数时进入 CLI 模式。例如：
 
 ```powershell
-dist\键盘说话器-console\键盘说话器-console.exe --cli
-dist\键盘说话器-console\键盘说话器-console.exe --text "你好，我是菲比。" --output outputs\demo.wav
+dist\text-speaker-console\text-speaker-console.exe --cli
+dist\text-speaker-console\text-speaker-console.exe --text "你好，我是菲比。" --output outputs\demo.wav
 ```
 
-发布时请分发整个 `dist/键盘说话器/` 或 `dist/键盘说话器-console/` 文件夹，而不是只复制单个 EXE。`models/`、`outputs/` 和历史音频不会被打包进 EXE；首次运行仍会按现有逻辑下载 Genie-TTS 基础资源和语音包模型。
+发布时请分发整个 `dist/text-speaker/` 或 `dist/text-speaker-console/` 文件夹，而不是只复制单个 EXE。`models/`、`outputs/` 和历史音频不会被打包进 EXE；首次运行仍会按现有逻辑下载 Genie-TTS 基础资源和语音包模型。
 
 ## 参考
 
