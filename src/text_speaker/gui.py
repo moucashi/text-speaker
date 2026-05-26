@@ -15,7 +15,8 @@ from .main import (
     DEFAULT_TEXT,
     HISTORY_DIR,
     HISTORY_FILE,
-    available_characters,
+    available_character_display_names,
+    character_display_name,
     generate_speech,
     normalize_character,
     SpeechGenerationCancelled,
@@ -44,15 +45,16 @@ class GenieTtsApp:
         self.worker: threading.Thread | None = None
         self.last_generated: HistoryItem | None = self.history[0] if self.history else None
 
-        self.character_var = tk.StringVar(value=DEFAULT_CHARACTER)
+        self.character_var = tk.StringVar(value=character_display_name(DEFAULT_CHARACTER))
         self.status_var = tk.StringVar(value="就绪")
-        self.generate_button_text = tk.StringVar(value="生成")
+        self.generate_button_text = tk.StringVar(value="生成 (Enter)")
 
         self._build_style()
         self._build_ui()
         self._render_history()
         self._refresh_primary_button()
         self.root.bind("<Return>", self._handle_enter)
+        self.root.bind("<Escape>", self._handle_escape)
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
     def _build_style(self) -> None:
@@ -99,9 +101,9 @@ class GenieTtsApp:
         self.character_select = ttk.Combobox(
             control_bar,
             textvariable=self.character_var,
-            values=available_characters(),
+            values=available_character_display_names(),
             state="readonly",
-            width=18,
+            width=30,
         )
         self.character_select.grid(row=0, column=0, sticky="w")
         self.character_select.bind("<<ComboboxSelected>>", self._on_input_changed)
@@ -156,6 +158,12 @@ class GenieTtsApp:
         self._generate_cancel_or_play()
         return "break"
 
+    def _handle_escape(self, event: tk.Event) -> str:
+        if self.is_generating:
+            self._cancel_generation()
+            return "break"
+        return "continue"
+
     def _insert_newline(self, event: tk.Event) -> str:
         self.text_input.insert("insert", "\n")
         return "break"
@@ -191,11 +199,11 @@ class GenieTtsApp:
 
     def _refresh_primary_button(self) -> None:
         if self.is_generating:
-            self.generate_button_text.set("取消")
+            self.generate_button_text.set("取消 (Enter / Esc)")
         elif self._matches_last_generated():
-            self.generate_button_text.set("播放")
+            self.generate_button_text.set("播放 (Enter)")
         else:
-            self.generate_button_text.set("生成")
+            self.generate_button_text.set("生成 (Enter)")
 
     def _on_input_changed(self, event: tk.Event) -> None:
         self._refresh_primary_button()
@@ -379,7 +387,7 @@ class GenieTtsApp:
         preview = item.text.replace("\n", " ")
         if len(preview) > 160:
             preview = f"{preview[:157]}..."
-        return f"[{item.character}] {preview}"
+        return f"[{character_display_name(item.character)}] {preview}"
 
     def _format_error_status(self, message: str) -> str:
         one_line_message = " ".join(message.split())
