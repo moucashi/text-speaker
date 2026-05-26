@@ -22,6 +22,7 @@ dist/
 htmlcov/
 
 # Genie-TTS downloaded data and generated audio
+models/
 CharacterModels/
 GenieData/
 outputs/

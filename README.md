@@ -10,16 +10,16 @@
 uv sync
 ```
 
-首次运行 Genie-TTS 时会下载基础资源和预置角色模型，文件较大，请保持网络可用。本示例会在导入 `genie_tts` 前检查 `GenieData`，缺失时自动从 HuggingFace 下载基础资源，不需要手动确认。Genie-TTS 官方说明中提到首次运行需要下载约 391MB 基础资源，预置角色模型会在首次加载时自动获取。
+首次运行 Genie-TTS 时会下载基础资源和预置角色模型，文件较大，请保持网络可用。本示例会在导入 `genie_tts` 前检查 `models/GenieData`，缺失时自动从 HuggingFace 下载基础资源，不需要手动确认。Genie-TTS 官方说明中提到首次运行需要下载约 391MB 基础资源，预置角色模型会在首次加载时自动获取并保存到 `models/CharacterModels/`。
 
-如果已经手动下载了 GenieData，可以通过环境变量指定资源目录：
+如果已经手动下载了 GenieData，可以放到 `models/GenieData`，也可以通过环境变量指定资源目录：
 
 ```powershell
 $env:GENIE_DATA_DIR = "D:\path\to\GenieData"
 uv run python -m text_speaker.main
 ```
 
-也可以直接使用脚本参数指定，脚本会在导入 `genie_tts` 之前设置环境变量：
+也可以直接使用脚本参数指定，脚本会在导入 `genie_tts` 之前设置环境变量。该参数只覆盖 Genie-TTS 基础资源目录，预置语音包模型仍会保存到 `models/CharacterModels/`：
 
 ```bash
 uv run python -m text_speaker.main --genie-data-dir D:\path\to\GenieData
