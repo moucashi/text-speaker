@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# uv / virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Packaging
+build/
+dist/
+*.egg-info/
+
+# Test / lint / type-check caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Genie-TTS downloaded data and generated audio
+CharacterModels/
+GenieData/
+outputs/
+
+# Local cache and editor files
+.cache/
+.idea/
+.vscode/
+
+# Environment variables
+.env
+.env.*
+
+# Logs
+*.log
