@@ -226,7 +226,7 @@ def run_cli(args: argparse.Namespace) -> None:
 def main(argv: Sequence[str] | None = None) -> None:
     argv = sys.argv[1:] if argv is None else list(argv)
     if not argv:
-        from .gui import run_gui
+        from text_speaker.gui import run_gui
 
         run_gui()
         return
