@@ -13,6 +13,11 @@ DEFAULT_CHARACTER = "feibi"
 DEFAULT_TEXT = "你好，我是菲比。今天我们来测试 Genie 中文语音生成。"
 DEFAULT_OUTPUT = Path("outputs/feibi_zh.wav")
 PREDEFINED_CHARACTERS = ("feibi", "mika", "thirtyseven")
+CHARACTER_DISPLAY_NAMES = {
+    "feibi": "[中文] 菲比 (feibi)",
+    "mika": "[日语] 圣园未花 / Misono Mika (mika)",
+    "thirtyseven": "[英语] 37 / Thirty Seven (thirtyseven)",
+}
 CHARACTER_ALIASES = {
     "feibi": "feibi",
     "菲比": "feibi",
@@ -49,18 +54,37 @@ def available_characters() -> list[str]:
     return ordered
 
 
+def character_display_name(character: str) -> str:
+    """返回语音包在界面中使用的展示名称。"""
+    normalized_character = normalize_character(character)
+    return CHARACTER_DISPLAY_NAMES.get(normalized_character, normalized_character)
+
+
+def available_character_display_names() -> list[str]:
+    """返回 Genie-TTS 当前示例支持选择的预置语音包展示名。"""
+    return [character_display_name(character) for character in available_characters()]
+
+
 def normalize_character(character: str) -> str:
     stripped_character = character.strip()
+    if stripped_character in CHARACTER_DISPLAY_NAMES.values():
+        return next(
+            character_id
+            for character_id, display_name in CHARACTER_DISPLAY_NAMES.items()
+            if display_name == stripped_character
+        )
+
+    lowered_character = stripped_character.lower()
     return CHARACTER_ALIASES.get(
         stripped_character,
-        CHARACTER_ALIASES.get(stripped_character.lower(), stripped_character.lower()),
+        CHARACTER_ALIASES.get(lowered_character, lowered_character),
     )
 
 
 def validate_character(character: str) -> str:
     normalized_character = normalize_character(character)
     if normalized_character not in PREDEFINED_CHARACTERS:
-        available = "、".join(PREDEFINED_CHARACTERS)
+        available = "、".join(available_character_display_names())
         raise ValueError(f"未知语音包：{character}。可用语音包：{available}")
     return normalized_character
 
@@ -134,15 +158,16 @@ def ensure_character_loaded(
     with _genie_lock:
         genie = _get_genie(status_callback)
         if normalized_character not in _loaded_characters:
+            display_name = character_display_name(normalized_character)
             character_dir = Path("CharacterModels") / "v2ProPlus" / normalized_character
             if character_dir.exists():
-                _emit_status(status_callback, f"正在加载 {normalized_character} 语音包...")
+                _emit_status(status_callback, f"正在加载 {display_name} 语音包...")
             else:
-                _emit_status(status_callback, f"正在下载并加载 {normalized_character} 语音包...")
+                _emit_status(status_callback, f"正在下载并加载 {display_name} 语音包...")
             try:
                 genie.load_predefined_character(normalized_character)
             except Exception as exc:
-                _raise_stage_error(status_callback, f"加载 {normalized_character} 语音包", exc)
+                _raise_stage_error(status_callback, f"加载 {display_name} 语音包", exc)
             _loaded_characters.add(normalized_character)
         return genie
 
