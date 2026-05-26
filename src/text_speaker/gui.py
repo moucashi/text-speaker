@@ -215,7 +215,7 @@ class GenieTtsApp:
         task_id = self.current_task_id
         self.cancelled_task_ids.discard(task_id)
         self._set_generating(True)
-        self.status_var.set("正在生成语音...")
+        self.status_var.set("准备生成语音...")
 
         self.worker = threading.Thread(
             target=self._run_generation,
@@ -238,6 +238,7 @@ class GenieTtsApp:
                 character=character,
                 play=False,
                 should_cancel=lambda: task_id in self.cancelled_task_ids,
+                status_callback=lambda message: self._update_generation_status(task_id, message),
             )
         except SpeechGenerationCancelled:
             self.root.after(0, self._on_generation_cancelled, task_id)
@@ -253,6 +254,13 @@ class GenieTtsApp:
             created_at=datetime.now().isoformat(timespec="seconds"),
         )
         self.root.after(0, self._on_generation_succeeded, task_id, item)
+
+    def _update_generation_status(self, task_id: int, message: str) -> None:
+        self.root.after(0, self._set_generation_status, task_id, message)
+
+    def _set_generation_status(self, task_id: int, message: str) -> None:
+        if self.is_generating and task_id == self.current_task_id:
+            self.status_var.set(message)
 
     def _cancel_generation(self) -> None:
         if not self.is_generating:
@@ -288,7 +296,7 @@ class GenieTtsApp:
         if not self.is_generating or task_id != self.current_task_id:
             return
         self._set_generating(False)
-        self.status_var.set("生成失败")
+        self.status_var.set(self._format_error_status(message))
         messagebox.showerror("生成失败", message)
 
     def _on_generation_cancelled(self, task_id: int) -> None:
@@ -372,6 +380,12 @@ class GenieTtsApp:
         if len(preview) > 160:
             preview = f"{preview[:157]}..."
         return f"[{item.character}] {preview}"
+
+    def _format_error_status(self, message: str) -> str:
+        one_line_message = " ".join(message.split())
+        if len(one_line_message) > 80:
+            one_line_message = f"{one_line_message[:77]}..."
+        return one_line_message
 
     def _load_history(self) -> list[HistoryItem]:
         if not HISTORY_FILE.exists():
