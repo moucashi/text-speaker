@@ -1,0 +1,19 @@
+[project]
+name = "test-genie"
+version = "0.1.0"
+description = "基于 Genie-TTS 的菲比中文语音生成示例"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "genie-tts>=2.0.2",
+]
+
+[project.scripts]
+feibi-zh-tts = "test_genie.feibi_zh_tts:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.uv]
+package = true
