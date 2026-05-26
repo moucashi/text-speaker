@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import sys
 import threading
 from pathlib import Path
@@ -39,6 +40,20 @@ CHARACTER_ALIASES = {
     "37": "thirtyseven",
     "thirtyseven": "thirtyseven",
 }
+REQUIRED_GENIE_DATA_FILES = ("speaker_encoder.onnx",)
+REQUIRED_CHARACTER_PATHS = (
+    "prompt_wav.json",
+    "prompt_wav",
+    "tts_models/t2s_encoder_fp32.bin",
+    "tts_models/t2s_encoder_fp32.onnx",
+    "tts_models/t2s_first_stage_decoder_fp32.onnx",
+    "tts_models/t2s_shared_fp16.bin",
+    "tts_models/t2s_stage_decoder_fp32.onnx",
+    "tts_models/vits_fp16.bin",
+    "tts_models/vits_fp32.onnx",
+    "tts_models/prompt_encoder_fp16.bin",
+    "tts_models/prompt_encoder_fp32.onnx",
+)
 HISTORY_DIR = Path("outputs/history")
 HISTORY_FILE = HISTORY_DIR / "history.json"
 
@@ -133,12 +148,58 @@ def _raise_stage_error(
     raise RuntimeError(message) from exc
 
 
+def _path_is_relative_to(path: Path, parent: Path) -> bool:
+    try:
+        path.resolve().relative_to(parent.resolve())
+    except ValueError:
+        return False
+    return True
+
+
+def _missing_paths(directory: Path, required_paths: Sequence[str]) -> list[Path]:
+    return [
+        directory / relative_path
+        for relative_path in required_paths
+        if not (directory / relative_path).exists()
+    ]
+
+
+def _remove_incomplete_model_dir(directory: Path, status_callback: StatusCallback | None) -> None:
+    if not directory.exists():
+        return
+    if not _path_is_relative_to(directory, MODELS_DIR):
+        raise RuntimeError(f"拒绝自动清理模型目录外的路径：{directory}")
+
+    _emit_status(status_callback, f"正在清理未完成的模型下载：{directory}")
+    shutil.rmtree(directory)
+
+
+def _validate_required_paths(
+    directory: Path,
+    required_paths: Sequence[str],
+    resource_name: str,
+) -> None:
+    missing_paths = _missing_paths(directory, required_paths)
+    if missing_paths:
+        formatted_paths = "、".join(str(path) for path in missing_paths)
+        raise FileNotFoundError(f"{resource_name} 不完整，缺少：{formatted_paths}")
+
+
 def ensure_genie_data_exists(status_callback: StatusCallback | None = None) -> None:
     """在导入 genie_tts 前准备 GenieData，避免触发交互式下载确认。"""
     genie_data_dir = Path(os.getenv("GENIE_DATA_DIR", str(DEFAULT_GENIE_DATA_DIR)))
     os.environ["GENIE_DATA_DIR"] = str(genie_data_dir)
     if genie_data_dir.exists():
-        return
+        missing_paths = _missing_paths(genie_data_dir, REQUIRED_GENIE_DATA_FILES)
+        if not missing_paths:
+            return
+        if not _path_is_relative_to(genie_data_dir, MODELS_DIR):
+            formatted_paths = "、".join(str(path) for path in missing_paths)
+            message = f"Genie-TTS 基础资源目录不完整，缺少：{formatted_paths}"
+            _emit_status(status_callback, message)
+            raise FileNotFoundError(message)
+        _emit_status(status_callback, "检测到未完成的 Genie-TTS 基础资源下载，正在重新下载...")
+        _remove_incomplete_model_dir(genie_data_dir, status_callback)
 
     if genie_data_dir.name != "GenieData":
         message = (
@@ -163,20 +224,29 @@ def ensure_genie_data_exists(status_callback: StatusCallback | None = None) -> N
         )
     except Exception as exc:
         _raise_stage_error(status_callback, "下载 Genie-TTS 基础资源", exc)
+    try:
+        _validate_required_paths(
+            genie_data_dir,
+            REQUIRED_GENIE_DATA_FILES,
+            "Genie-TTS 基础资源",
+        )
+    except Exception as exc:
+        _raise_stage_error(status_callback, "校验 Genie-TTS 基础资源", exc)
 
 
 def _get_genie(status_callback: StatusCallback | None = None) -> ModuleType:
     global _genie
-    if _genie is None:
-        ensure_genie_data_exists(status_callback)
-        _emit_status(status_callback, "正在初始化 Genie-TTS...")
-        try:
-            import genie_tts as genie
-        except Exception as exc:
-            _raise_stage_error(status_callback, "初始化 Genie-TTS", exc)
+    with _genie_lock:
+        if _genie is None:
+            ensure_genie_data_exists(status_callback)
+            _emit_status(status_callback, "正在初始化 Genie-TTS...")
+            try:
+                import genie_tts as genie
+            except Exception as exc:
+                _raise_stage_error(status_callback, "初始化 Genie-TTS", exc)
 
-        _genie = genie
-    return _genie
+            _genie = genie
+        return _genie
 
 
 def _download_predefined_character(
@@ -185,7 +255,12 @@ def _download_predefined_character(
 ) -> Path:
     character_dir = CHARACTER_MODELS_DIR / CHARACTER_MODEL_VERSION / character
     if character_dir.exists():
-        return character_dir
+        missing_paths = _missing_paths(character_dir, REQUIRED_CHARACTER_PATHS)
+        if not missing_paths:
+            return character_dir
+        display_name = character_display_name(character)
+        _emit_status(status_callback, f"检测到未完成的 {display_name} 语音包下载，正在重新下载...")
+        _remove_incomplete_model_dir(character_dir, status_callback)
 
     from huggingface_hub import snapshot_download
 
@@ -203,10 +278,14 @@ def _download_predefined_character(
     except Exception as exc:
         _raise_stage_error(status_callback, f"下载 {display_name} 语音包", exc)
 
-    if not character_dir.exists():
-        message = f"下载 {display_name} 语音包失败：未找到模型目录：{character_dir}"
-        _emit_status(status_callback, message)
-        raise RuntimeError(message)
+    try:
+        _validate_required_paths(
+            character_dir,
+            REQUIRED_CHARACTER_PATHS,
+            f"{display_name} 语音包",
+        )
+    except Exception as exc:
+        _raise_stage_error(status_callback, f"校验 {display_name} 语音包", exc)
     return character_dir
 
 
