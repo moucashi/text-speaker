@@ -9,7 +9,7 @@ dependencies = [
 ]
 
 [project.scripts]
-text-speaker = "text_speaker.main:main"
+dev = "text_speaker.main:main"
 
 [build-system]
 requires = ["hatchling"]
