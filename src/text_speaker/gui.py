@@ -183,6 +183,7 @@ class GenieTtsApp:
         )
         self.history_frame.bind("<Configure>", self._update_history_scroll_region)
         self.history_canvas.bind("<Configure>", self._resize_history_frame)
+        self._bind_history_mousewheel(self.history_canvas, self.history_frame)
 
     def _handle_enter(self, event: tk.Event) -> str:
         self._generate_cancel_or_play()
@@ -447,11 +448,13 @@ class GenieTtsApp:
         self.clear_history_button.state(["!disabled"] if visible_history else ["disabled"])
 
         if not visible_history:
-            ttk.Label(
+            empty_label = ttk.Label(
                 self.history_frame,
                 text="暂无历史记录",
                 style="Muted.TLabel",
-            ).grid(row=0, column=0, sticky="w", pady=10)
+            )
+            empty_label.grid(row=0, column=0, sticky="w", pady=10)
+            self._bind_history_mousewheel(empty_label)
             return
 
         self.history_frame.columnconfigure(0, weight=1)
@@ -488,6 +491,13 @@ class GenieTtsApp:
                 command=lambda path=item.audio_path: self._play_audio(Path(path)),
             )
             play_button.grid(row=0, column=3, sticky="e", padx=(8, 0))
+            self._bind_history_mousewheel(
+                row_frame,
+                text_label,
+                delete_button,
+                open_button,
+                play_button,
+            )
 
     def _open_history_folder(self) -> None:
         HISTORY_DIR.mkdir(parents=True, exist_ok=True)
@@ -577,7 +587,7 @@ class GenieTtsApp:
         preview = item.text.replace("\n", " ")
         if len(preview) > 160:
             preview = f"{preview[:157]}..."
-        return f"[{character_display_name(item.character)}] {preview}"
+        return f"{character_display_name(item.character)} {preview}"
 
     def _format_error_status(self, message: str) -> str:
         one_line_message = " ".join(message.split())
@@ -623,9 +633,53 @@ class GenieTtsApp:
 
     def _update_history_scroll_region(self, event: tk.Event) -> None:
         self.history_canvas.configure(scrollregion=self.history_canvas.bbox("all"))
+        self._reset_history_scroll_if_not_needed()
 
     def _resize_history_frame(self, event: tk.Event) -> None:
         self.history_canvas.itemconfigure(self.history_window, width=event.width)
+        self._reset_history_scroll_if_not_needed()
+
+    def _bind_history_mousewheel(self, *widgets: tk.Widget) -> None:
+        for widget in widgets:
+            widget.bind("<MouseWheel>", self._on_history_mousewheel, add="+")
+            widget.bind("<Button-4>", self._on_history_mousewheel, add="+")
+            widget.bind("<Button-5>", self._on_history_mousewheel, add="+")
+
+    def _on_history_mousewheel(self, event: tk.Event) -> str:
+        if not self._history_can_scroll():
+            self.history_canvas.yview_moveto(0)
+            return "break"
+
+        if getattr(event, "num", None) == 4:
+            scroll_units = -1
+        elif getattr(event, "num", None) == 5:
+            scroll_units = 1
+        else:
+            delta = getattr(event, "delta", 0)
+            if delta == 0:
+                return "break"
+            if sys.platform.startswith("win"):
+                scroll_units = -int(delta / 120)
+                if scroll_units == 0:
+                    scroll_units = -1 if delta > 0 else 1
+            else:
+                scroll_units = -1 if delta > 0 else 1
+
+        self.history_canvas.yview_scroll(scroll_units, "units")
+        return "break"
+
+    def _history_can_scroll(self) -> bool:
+        scroll_region = self.history_canvas.bbox("all")
+        if scroll_region is None:
+            return False
+
+        content_height = scroll_region[3] - scroll_region[1]
+        visible_height = self.history_canvas.winfo_height()
+        return content_height > visible_height
+
+    def _reset_history_scroll_if_not_needed(self) -> None:
+        if not self._history_can_scroll():
+            self.history_canvas.yview_moveto(0)
 
     def _on_close(self) -> None:
         if self.is_closing:
